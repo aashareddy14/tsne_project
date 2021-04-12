@@ -14,3 +14,7 @@ def row_loop_dist(M, distance_func):
     return dist
 
 D = row_loop_dist(X, squared_euc_dist)
+
+# Compute P_ij matrix (need to perform binary search to find value of sigma_i)
+
+# Perform gradient descent
