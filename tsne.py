@@ -31,22 +31,50 @@ def p_matrix(X, perplexity = 30.0, tol = 1e-5):
 
     P = np.zeros((n, d), dtype=np.float64)
     beta = np.ones((n, 1))
+    beta_sum = 0.0
     log_perp = np.log(perplexity)
 
     for i in range(n):
+        beta_min = -np.inf
+        beta_max = np.inf
+        beta = 1.0
+
+        # Binary search of precision for i-th conditional distribution
         for j in range(steps):
-            sum_P = 0
+            sum_Pi = 0.0
             for k in range(d):
                 if k != i:
-                    P[i,k] = np.exp(-X[i, j] * beta)
-                    sum_P += P[i,k]
-                sum_dist_P = 0
-                P[i,k] /= sum_P
-                sum_dist_P += X[i,k] * P[i,k]
+                    P[i, k] = math.exp(-X[i, k] * beta)
+                    sum_Pi += P[i, k]
 
-        # this is very not done, I am confused
+            sum_disti_Pi = 0.0
 
+            for k in range(d):
+                P[i, k] /= sum_Pi
+                sum_disti_Pi += X[i, k] * P[i, k]
 
+            entropy = np.log(sum_Pi) + beta * sum_disti_Pi
+            entropy_diff = entropy - log_perp
+
+            if math.fabs(entropy_diff) <= tol:
+                break
+
+            if entropy_diff > 0.0:
+                beta_min = beta
+                if beta_max == np.inf:
+                    beta *= 2.0
+                else:
+                    beta = (beta + beta_max) / 2.0
+            else:
+                beta_max = beta
+                if beta_min == -np.inf:
+                    beta /= 2.0
+                else:
+                    beta = (beta + beta_min) / 2.0
+
+        beta_sum += beta
+
+    return P
 
 
 
