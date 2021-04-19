@@ -84,6 +84,7 @@ def p_matrix(X, perplexity = 30.0, tol = 1e-5):
 
 
 # function to calculate Q_ij from Y in the new map
+
 def q_matrix(Y):
     """
     Finds Q_ij matrix
@@ -94,7 +95,8 @@ def q_matrix(Y):
     """
 
     D = row_loop_dist(Y, squared_euc_dist)
-
+    (n, d) = Y.shape
+    Q = np.zeros((n, d))
     sum_Qi = 0.0
     for i in range(n):
         for k in range(d):
