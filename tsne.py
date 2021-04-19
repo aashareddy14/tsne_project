@@ -96,7 +96,7 @@ def q_matrix(Y):
 
     D = row_loop_dist(Y, squared_euc_dist)
     (n, d) = Y.shape
-    Q = np.zeros((n, d))
+    Q = np.zeros((n, n))
     sum_Qi = 0.0
     for i in range(n):
         for k in range(d):
