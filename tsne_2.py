@@ -23,22 +23,18 @@ def squared_euc_dist(X):
     return D
 
 
-def calc_prob_matrix(distances, sigmas):
-    """Convert a distances matrix to a matrix of probabilities."""
-    two_sig_sq = 2. * np.square(sigmas.reshape((-1, 1)))
+def p_cond(d_matrix, sigmas):
+    """Convert a distances matrix to a matrix of conditional probabilities."""
 
-    X = distances / two_sig_sq
+    sig_2 = np.square(sigmas.reshape((-1, 1)))
+    P_cond = np.exp((d_matrix / (2 * sig_2)) - np.max((d_matrix / (2 * sig_2)), axis=1).reshape([-1, 1]))
 
-    # Subtract max for numerical stability
-    e_x = np.exp(X - np.max(X, axis=1).reshape([-1, 1]))
+    # set p_i|i = 0
+    np.fill_diagonal(P_cond, 0.)
 
-    # We usually want diagonal probailities to be 0.
-    np.fill_diagonal(e_x, 0.)
+    P_cond = (P_cond + 1e-10) / (P_cond + 1e-10).sum(axis=1).reshape([-1, 1])
 
-    # Add a tiny constant for stability of log we take later
-    e_x += 1e-8  # numerical stability
-
-    return e_x / e_x.sum(axis=1).reshape([-1, 1])
+    return P_cond
 
 
 def binary_search(eval_fn, target, tol=1e-10, max_iter=10000,
@@ -67,24 +63,24 @@ def binary_search(eval_fn, target, tol=1e-10, max_iter=10000,
     return mid
 
 
-def perplexity(distances, sigmas):
-    """calculate perplexity based on the P probability matrix."""
-    prob_matrix = calc_prob_matrix(distances, sigmas)
-    entropy = -np.sum(prob_matrix * np.log2(prob_matrix), 1)
+def perp(d_matrix, sigmas):
+    """calculate perplexity from distance matrix, sigmas, and conditional probability matrix."""
+    P = p_cond(d_matrix, sigmas)
+    entropy = -np.sum(P * np.log2(P), axis=1)
     perplexity = 2 ** entropy
 
     return perplexity
 
 
-def find_optimal_sigmas(distances, target_perplexity):
+def find_optimal_sigmas(d_matrix, target_perplexity):
     """For each row of distances matrix, find sigma that results
     in target perplexity for that role."""
     sigmas = []
     # For each row of the matrix (each point in our dataset)
-    for i in range(distances.shape[0]):
+    for i in range(d_matrix.shape[0]):
         # Make fn that returns perplexity of this row given sigma
         eval_fn = lambda sigma: \
-            perplexity(distances[i:i + 1, :], np.array(sigma))
+            perp(d_matrix[i:i + 1, :], np.array(sigma))
         # Binary search over sigmas to achieve target perplexity
         correct_sigma = binary_search(eval_fn, target_perplexity)
         # Append the resulting sigma to our output array
@@ -92,105 +88,87 @@ def find_optimal_sigmas(distances, target_perplexity):
     return np.array(sigmas)
 
 
-def q_tsne(Y):
-    """t-SNE: Given low-dimensional representations Y, compute
-    matrix of joint probabilities with entries q_ij."""
-    distances = -squared_euc_dist(Y)
-    inv_distances = np.power(1. - distances, -1)
-    np.fill_diagonal(inv_distances, 0.)
-    return inv_distances / np.sum(inv_distances), inv_distances
+def q_ij(Y):
+    """Calculate joint probabilities over all points given Y, the low-dimensional map of data points. (pg. 2585)"""
+
+    numerator = np.power(1. + (squared_euc_dist(Y)), -1)
+    Q = numerator / np.sum(numerator)
+
+    # q_i|i = 0
+    np.fill_diagonal(Q, 0.)
+
+    return Q
 
 
-def p_joint(X, target_perplexity):
-    """Given a data matrix X, gives joint probabilities matrix.
-
-    # Arguments
-        X: Input data matrix.
-    # Returns:
-        P: Matrix with entries p_ij = joint probabilities.
+def p_ij(X, target_perplexity):
+    """Calculate joint probabilities in the high dimensional space given data matrix X
+    and a target perplexity to find optimal sigmas (pg. 2584).
     """
-    # Get the negative euclidian distances matrix for our data
-    distances = -squared_euc_dist(X)
-    # Find optimal sigma for each row of this distances matrix
-    sigmas = find_optimal_sigmas(distances, target_perplexity)
-    # Calculate the probabilities based on these optimal sigmas
-    p_conditional = calc_prob_matrix(distances, sigmas)
-    # Go from conditional to joint probabilities matrix
-    P = (p_conditional + p_conditional.T) / (2. * p_conditional.shape[0])
-    return P
+
+    d_matrix = -squared_euc_dist(X)
+
+    # optimal sigma for each row of distance matrix
+    sigmas = find_optimal_sigmas(d_matrix, target_perplexity)
+
+    # conditional p matrix from optimal sigmas
+    p_conditional = p_cond(d_matrix, sigmas)
+
+    # convert conditional P to joint P matrix (pg. 2584)
+    n = p_conditional.shape[0]
+    p_joint = (p_conditional + p_conditional.T) / (2. * n)
+
+    return p_joint
 
 
-def tsne_grad(P, Q, Y):
-    """Estimate the gradient of t-SNE cost with respect to Y."""
-    pq_diff = P - Q
-    pq_expanded = np.expand_dims(pq_diff, 2)
-    y_diffs = np.expand_dims(Y, 1) - np.expand_dims(Y, 0)
+def grad_C(P, Q, Y):
+    """Calculate gradient of cost function (KL) with respect to lower dimensional map points Y (pg. 2586)"""
 
-    # Get Q and distances (distances only used for t-SNE)
-    distances = q_tsne(Y)[1]
+    pq_diff = (P - Q)[:, :, np.newaxis]
 
-    # Expand our inv_distances matrix so can multiply by y_diffs
-    distances_expanded = np.expand_dims(distances, 2)
+    y_diff = Y[:, np.newaxis, :] - Y[np.newaxis, :, :]
 
-    # Multiply this by inverse distances matrix
-    y_diffs_wt = y_diffs * distances_expanded
+    y_dist = (np.power(1. + (squared_euc_dist(Y)), -1))[:, :, np.newaxis]
 
-    # Multiply then sum over j's
-    grad = 4. * (pq_expanded * y_diffs_wt).sum(1)
+    grad = 4. * (pq_diff * y_diff * y_dist).sum(axis=1)
+
     return grad
 
 
-def estimate_sne(X, num_iters=1000, q_fn=q_tsne, perplexity=30, learning_rate=10, momentum=0.9):
-    """Estimates a SNE model.
+def tsne_opt(X, num_iters=1000, perplexity=30, alpha=10, momentum=0.9):
+    """Calculate Y, the optimal low-dimensional representation of data matrix X using optimized TSNE.
 
-    # Arguments
-        X: Input data matrix.
-        y: Class labels for that matrix.
-        P: Matrix of joint probabilities.
-        rng: np.random.RandomState().
-        num_iters: Iterations to train for.
-        q_fn: Function that takes Y and gives Q prob matrix.
-        plot: How many times to plot during training.
-    # Returns:
-        Y: Matrix, low-dimensional representation of X.
+    Inputs:
+        X: data matrix
+        num_iters: number of iterations
+        perplexity: target perplexity for calculating optimal sigmas for P probability matrix
+        alpha: learning rate
+        momentum: momentum to speed up gradient descent algorithm
     """
 
-    # Initialise our 2D representation, numpy RandomState for reproducibility
-    rng = np.random.RandomState(1)
-    Y = rng.normal(0., 0.0001, [X.shape[0], 2])
+    # Initialize Y
+    Y = (np.random.RandomState(1)).normal(0., 0.0001, [X.shape[0], 2])
 
-    # Obtain matrix of joint probabilities p_ij
-    P = p_joint(X, perplexity)
+    P = p_ij(X, perplexity)
 
-    # Initialise past values (used for momentum)
-    if momentum:
-        Y_m2 = Y.copy()
-        Y_m1 = Y.copy()
+    # Initialise past y_t-1 and y_t-2 values (used for momentum)
+    Y_tmin2 = Y
+    Y_tmin1 = Y
 
-    # Start gradient descent loop
+    # gradient descent with momentum
     for i in range(num_iters):
+        Q = q_ij(Y)
+        grad = grad_C(P, Q, Y)
 
-        # Get Q and distances (distances only used for t-SNE)
-        Q, distances = q_fn(Y)
-        # Estimate gradients with respect to Y
-        grads = tsne_grad(P, Q, Y)
+        # Update Y using momentum (pg. 2587)
+        Y = (Y - alpha * grad) + (momentum * (Y_tmin1 - Y_tmin2))
 
-        # Update Y
-        Y = Y - learning_rate * grads
-        if momentum:  # Add momentum
-            Y += momentum * (Y_m1 - Y_m2)
-            # Update previous Y's for momentum
-            Y_m2 = Y_m1.copy()
-            Y_m1 = Y.copy()
-
-        # Plot sometimes
-        # if plot and i % (num_iters / plot) == 0:
-        #   categorical_scatter_2d(Y, y, alpha=1.0, ms=6,
-        #                         show=True, figsize=(9, 6))
+        # update values of y_t-1 and y_t-2
+        Y_tmin2 = Y_tmin1
+        Y_tmin1 = Y
 
     return Y
 
 
-yout = estimate_sne(X)
+yout = tsne_opt(X)
 
 sns.scatterplot(yout[:,0], yout[:,1], hue = specs)
