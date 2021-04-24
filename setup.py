@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="TSNE-reddy-beckner",
-    version="0.0.1",
+    version="0.0.2",
     author="Aasha Reddy, Madeleine Beckner",
     author_email="aashareddy14@gmail.com",
     description="Implementation of t-Distributed Stochastic Neighbor Embedding",
