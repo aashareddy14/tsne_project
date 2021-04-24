@@ -19,7 +19,7 @@ def p_ij(d_matrix, perplexity = 40.0, tol = 1e-6):
         perplexity: float chosen by user
         tolerance: float chosen by user 
 
-    Output: P-ij matrix
+    Output: P-ij matrix of pairwise similarities in the high dimensional space
     '''
 
     (n, d) = d_matrix.shape
@@ -108,7 +108,7 @@ def q_ij(Y):
     
     Input: Matrix Y
      
-    Output: 
+    Output: Q, a matrix of pairwise similarities in the low-dimensional map
     '''
     
     numerator = np.power(1. + (squared_euc_dist(Y)), -1)
@@ -125,9 +125,11 @@ def grad_C(P, Q, Y):
     Estimate the gradient of t-SNE cost with respect to Y.
     
     Input:
-        P:
-        Q:
-        Y:
+        P: P-ij matrix of pairwise similarities in the high dimensional space
+        Q: Q-ij, a matrix of pairwise similarities in the low-dimensional map
+        Y: low-dimensional representation of data matrix 
+    
+    Output: grad, gradient of t-SNE
     '''
     
     pq_diff = np.expand_dims((P - Q), 2)
@@ -152,6 +154,8 @@ def TSNE(X, num_iters = 1000, perplexity = 40, alpha = 100, momentum = 0.8):
         perplexity: target perplexity for calculating optimal sigmas for P probability matrix
         alpha: learning rate
         momentum: momentum to speed up gradient descent algorithm 
+    
+    Output: Y, low-dimensional representation of data found using t-SNE algorithm
     '''
 
     # Initialize Y 
