@@ -1,0 +1,7 @@
+,Time Comparison (seconds)
+PCA,0.113
+LLE,14.108
+Isomap,14.394
+NCA,67.81
+MDS,2215.406
+our t-SNE package,785.343
